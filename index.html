@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경제 지표 대시보드</title>
+<!-- 데이터 번들을 가장 먼저 요청해서 Chart.js 다운로드와 동시에 받는다 -->
+<script>
+window.__bundle = fetch('data/all.json?t=' + Math.floor(Date.now()/60000))
+  .then(r => r.ok ? r.json() : null).catch(() => null);
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#171b22; --panel2:#1e242d; --line:#2a313c;
+    --text:#e8ecf1; --muted:#8b95a5; --up:#ef5350; --down:#3b82f6; --accent:#f5c451;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:20px 24px 8px}
+  h1{font-size:20px;margin:0}
+  .sub{color:var(--muted);font-size:12px}
+  main{padding:8px 24px 40px;max-width:1200px;margin:0 auto}
+  button{font:inherit;color:inherit;cursor:pointer}
+  .btn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);color:#1a1a1a;border-color:var(--accent);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin:12px 0 24px}
+  .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;cursor:pointer;transition:.15s}
+  .card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .card .sym{font-size:12px;color:var(--muted)}
+  .card .name{font-weight:600;margin:2px 0 8px;font-size:15px}
+  .card .price{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .card .chg{font-size:13px;margin-top:2px;font-variant-numeric:tabular-nums}
+  .card .rm{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);font-size:14px;padding:2px 6px;border-radius:6px}
+  .card .rm:hover{background:var(--panel2);color:var(--text)}
+  .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--muted)}
+  .err{color:var(--muted);font-size:13px}
+  .section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .sec-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .sec-head h2{font-size:16px;margin:0}
+  .ranges{display:flex;gap:4px;flex-wrap:wrap}
+  .ranges button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:13px;color:var(--muted)}
+  .ranges button.on{background:var(--accent);color:#1a1a1a;border-color:var(--accent);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .chip{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;opacity:.45;cursor:pointer}
+  .chip.on{opacity:1}
+  .chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .chartbox{position:relative;height:380px}
+  .note{color:var(--muted);font-size:12px;margin-top:8px}
+  .warn{color:var(--accent)}
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(900px,100%);padding:18px 20px}
+  .modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+  .modal-title{font-size:18px;font-weight:700}
+  .modal-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  .close{background:none;border:none;font-size:20px;color:var(--muted)}
+  .modal .chartbox{height:400px}
+  .add-box{display:flex;gap:8px;margin-top:12px}
+  .add-box input{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px 12px;font:inherit}
+  .msg{font-size:13px;margin-top:8px;color:var(--muted);min-height:18px}
+  @media(max-width:600px){header,main{padding-left:14px;padding-right:14px}.chartbox,.modal .chartbox{height:300px}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>📈 경제 지표 대시보드</h1>
+    <div class="sub" id="updated">불러오는 중…</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" id="refresh">새로고침</button>
+    <button class="btn primary" id="addBtn">+ 종목 추가</button>
+  </div>
+</header>
+
+<main>
+  <div class="grid" id="grid"></div>
+
+  <div class="section">
+    <div class="sec-head">
+      <h2>요약 비교 차트</h2>
+      <div class="ranges" id="sumRanges"></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="chartbox"><canvas id="sumChart"></canvas></div>
+    <div class="note">지수·종목은 선택 기간 시작점 대비 등락률(%, 왼쪽 축), 공포탐욕지수는 0~100 점수(오른쪽 축)로 표시됩니다. 위 칩을 눌러 보고 싶은 항목만 선택하세요.</div>
+    <div class="note warn" id="sumMissing"></div>
+  </div>
+</main>
+
+<!-- 상세 차트 팝업 -->
+<div class="overlay" id="chartOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="mTitle"></div>
+        <div class="sub" id="mSub"></div>
+      </div>
+      <div class="modal-right">
+        <button class="close" id="mClose">✕</button>
+        <div class="ranges" id="mRanges"></div>
+      </div>
+    </div>
+    <div class="chartbox"><canvas id="mChart"></canvas></div>
+    <div class="msg" id="mMsg"></div>
+  </div>
+</div>
+
+<!-- 종목 추가 팝업 -->
+<div class="overlay" id="addOverlay">
+  <div class="modal" style="width:min(460px,100%)">
+    <div class="modal-head">
+      <div class="modal-title">종목 추가</div>
+      <button class="close" id="aClose">✕</button>
+    </div>
+    <div class="sub">야후 파이낸스 티커를 입력하세요. 예) AAPL, MSFT, AMD, 005930.KS, ^DJI<br>추가한 종목은 이 브라우저에서 바로 조회됩니다(무료 프록시 사용, 느리거나 불안정할 수 있음). 항상 빠르고 안정적으로 보려면 저장소의 symbols.json 에도 추가하세요.</div>
+    <div class="add-box">
+      <input id="aInput" placeholder="티커 입력" autocomplete="off">
+      <button class="btn primary" id="aOk">추가</button>
+    </div>
+    <div class="msg" id="aMsg"></div>
+  </div>
+</div>
+
+<script>
+/* ================= 설정 ================= */
+const FG = 'FG';
+const DEFAULTS = [
+  {s:'^IXIC', n:'나스닥'},
+  {s:'^GSPC', n:'S&P 500'},
+  {s:'NVDA',  n:'엔비디아'},
+  {s:'TSLA',  n:'테슬라'},
+  {s:'SPCX',  n:'스페이스X'},
+  {s:'PLTR',  n:'팔란티어'},
+];
+const RANGES = {   // k = data/all.json 안의 구간 키
+  '1일':  {k:'d1',  range:'1d',  interval:'5m',  ms:864e5,        intraday:true},
+  '7일':  {k:'d7',  range:'1mo', interval:'1h',  ms:7*864e5,      intraday:true},
+  '30일': {k:'d30', range:'1mo', interval:'1d',  ms:30*864e5},
+  '1년':  {k:'y1',  range:'1y',  interval:'1d',  ms:365*864e5},
+  '5년':  {k:'y5',  range:'5y',  interval:'1wk', ms:5*365*864e5},
+  '최대': {k:'max', range:'max', interval:'1mo', ms:Infinity},
+};
+// 어떤 구간 데이터가 비어 있어도 화면이 비지 않도록, 가까운 구간 데이터로 대신 그린다
+const FALLBACK = {
+  d1:['d1','d7'], d7:['d7','d30','y1'], d30:['d30','y1','d7','y5'],
+  y1:['y1','y5','max'], y5:['y5','max'], max:['max','y5','y1'],
+};
+const PALETTE = ['#4cc9f0','#f72585','#b8f35a','#ff9f1c','#9d7bff','#2ec4b6','#ff6b6b','#c0c0ff','#ffd166','#06d6a0'];
+const FG_COLOR = '#f5c451';
+const FG_KO = {'extreme fear':'극단적 공포','fear':'공포','neutral':'중립','greed':'탐욕','extreme greed':'극단적 탐욕'};
+
+/* ================= 상태 ================= */
+const load = (k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
+const save = (k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
+let bundle = null;                         // data/all.json (접속 시 1회 로드, 이후 메모리에서 즉시 사용)
+let base = DEFAULTS;
+let custom = load('custom', []);           // 브라우저에서 추가한 종목
+let hidden = new Set(load('hidden', []));  // 숨긴 기본 종목
+let off = new Set(load('off', []));        // 요약 차트에서 꺼 둔 항목
+const buildItems = ()=>[...base, ...custom].filter((i,idx,a)=>!hidden.has(i.s) && a.findIndex(x=>x.s===i.s)===idx);
+let items = buildItems();
+let selected = new Set();
+const syncSelected = ()=>{ selected = new Set([FG, ...items.map(i=>i.s)].filter(k=>!off.has(k))); };
+syncSelected();
+let quotes = {};   // symbol -> {price, prev} | {err}
+let fgNow = null;
+let sumRange = '30일';
+let sumChart = null, mChart = null, mKey = null, mRange = '1일';
+
+const $ = id => document.getElementById(id);
+const colorOf = key => key===FG ? FG_COLOR : PALETTE[items.findIndex(i=>i.s===key) % PALETTE.length];
+const nameOf = key => key===FG ? 'CNN 공포탐욕지수' : (items.find(i=>i.s===key)?.n || key);
+const fmt = (v,d=2)=> v==null ? '-' : Number(v).toLocaleString('en-US',{maximumFractionDigits:d});
+
+/* ================= 데이터: 번들(즉시) → 라이브(임시 추가 종목만) ================= */
+function cut(pts, rangeKey){            // pts: [{x,y}] — 구간 길이에 맞게 자르되 2점 미만이면 그대로
+  const r = RANGES[rangeKey];
+  if(!isFinite(r.ms)) return pts;
+  const c = pts.filter(p=>p.x >= Date.now()-r.ms);
+  return c.length>1 ? c : pts;
+}
+function fromBundle(key, rangeKey){     // 동기 함수: 네트워크 없이 메모리에서 바로 반환
+  if(!bundle) return null;
+  if(key===FG){
+    const f = bundle.fg;
+    if(!f?.points?.length) return null;
+    let pts = f.points.map(([x,y])=>({x,y}));
+    const r = RANGES[rangeKey];
+    if(isFinite(r.ms)){ const c = pts.filter(p=>p.x>=Date.now()-r.ms); pts = c.length>1 ? c : pts.slice(-3); }
+    return {points:pts, now:f.now};
+  }
+  const st = bundle.stocks?.[key];
+  if(!st) return null;
+  for(const k of FALLBACK[RANGES[rangeKey].k]){
+    const raw = st.ranges?.[k];
+    if(raw && raw.length>1){
+      return {points:cut(raw.map(([x,y])=>({x,y})), rangeKey),
+              meta:{regularMarketPrice:st.price, chartPreviousClose:st.prev, shortName:st.name}};
+    }
+  }
+  return null;
+}
+
+/* 아래는 번들에 없는 종목(화면에서 임시 추가한 종목) 전용 — 브라우저/프록시 조회 */
+const PROXIES = [
+  u=>u,
+  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+];
+let proxyPref = 0;
+const liveCache = new Map();
+async function fetchJSON(url){
+  const hit = liveCache.get(url);
+  if(hit) return hit;
+  let lastErr;
+  for(let k=0;k<PROXIES.length;k++){
+    const idx = (proxyPref+k)%PROXIES.length;
+    try{
+      const ctl = new AbortController();
+      const timer = setTimeout(()=>ctl.abort(), 6000);
+      const r = await fetch(PROXIES[idx](url), {signal:ctl.signal});
+      clearTimeout(timer);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const v = await r.json();
+      proxyPref = idx; liveCache.set(url,v);
+      return v;
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr;
+}
+async function fetchStockLive(sym, rangeKey){
+  const r = RANGES[rangeKey];
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=${r.range}&interval=${r.interval}`;
+  const j = await fetchJSON(url);
+  const res = j?.chart?.result?.[0];
+  if(!res) throw new Error('종목을 찾을 수 없어요');
+  const ts = res.timestamp||[], cl = res.indicators?.quote?.[0]?.close||[];
+  let pts = [];
+  for(let i=0;i<ts.length;i++) if(cl[i]!=null) pts.push({x:ts[i]*1000, y:cl[i]});
+  return {points:cut(pts,rangeKey), meta:res.meta};
+}
+async function fetchFGLive(rangeKey){
+  const long = rangeKey==='5년' || rangeKey==='최대';
+  const j = await fetchJSON('https://production.dataviz.cnn.io/index/fearandgreed/graphdata' + (long?'/2020-09-18':''));
+  const pts = (j?.fear_and_greed_historical?.data || []).map(d=>({x:d.x, y:d.y}));
+  return {points:cut(pts,rangeKey), now:j.fear_and_greed};
+}
+const fetchStock = async (sym, rk) => fromBundle(sym,rk) || fetchStockLive(sym,rk);
+const fetchFG    = async rk => fromBundle(FG,rk) || fetchFGLive(rk);
+
+/* ================= 카드 ================= */
+function renderGrid(){
+  const g = $('grid'); g.innerHTML='';
+  g.appendChild(cardEl(FG));
+  items.forEach(i=>g.appendChild(cardEl(i.s)));
+}
+function cardEl(key){
+  const d = document.createElement('div');
+  d.className='card'; d.dataset.key=key;
+  d.innerHTML = `<div class="sym">${key===FG?'CNN':key}</div><div class="name">${nameOf(key)}</div><div class="price">…</div><div class="chg flat"></div>`;
+  if(key!==FG){
+    const rm = document.createElement('button'); rm.className='rm'; rm.textContent='✕'; rm.title='삭제';
+    rm.onclick = e=>{e.stopPropagation(); removeItem(key)};
+    d.appendChild(rm);
+  }
+  d.onclick = ()=>openModal(key);
+  paintCard(d,key);
+  return d;
+}
+function paintCard(el,key){
+  const p = el.querySelector('.price'), c = el.querySelector('.chg');
+  if(key===FG){
+    if(!fgNow){ return; }
+    const diff = fgNow.score - fgNow.previous_close;
+    p.textContent = Math.round(fgNow.score) + ' · ' + (FG_KO[fgNow.rating]||fgNow.rating);
+    p.style.fontSize='19px';
+    c.className = 'chg '+(diff>0?'up':diff<0?'down':'flat');
+    c.textContent = `전일 대비 ${diff>=0?'+':''}${diff.toFixed(1)}`;
+    return;
+  }
+  const q = quotes[key];
+  if(!q){ return; }
+  if(q.err){ p.textContent='-'; c.className='chg err'; c.textContent=q.err; return; }
+  const diff = q.price-q.prev, pct = diff/q.prev*100;
+  p.textContent = fmt(q.price);
+  c.className = 'chg '+(diff>0?'up':diff<0?'down':'flat');
+  c.textContent = `${diff>=0?'▲':'▼'} ${fmt(Math.abs(diff))} (${pct>=0?'+':''}${pct.toFixed(2)}%)`;
+}
+function paintAll(){ document.querySelectorAll('.card').forEach(el=>paintCard(el,el.dataset.key)); }
+
+function quoteFrom(res){
+  const pts = res.points;
+  let price = res.meta?.regularMarketPrice, prev = res.meta?.chartPreviousClose ?? res.meta?.previousClose;
+  if(price==null) price = pts.at(-1)?.y;
+  if(prev==null)  prev  = pts.at(-2)?.y;
+  return (price==null || prev==null) ? {err:'데이터 없음'} : {price, prev};
+}
+function setUpdatedText(){
+  $('updated').textContent = bundle?.updated
+    ? '데이터 기준: '+new Date(bundle.updated).toLocaleString('ko-KR')+' · 접속 시 1회 조회 (갱신은 새로고침 버튼)'
+    : '실시간 조회 모드 (data/all.json 없음) · '+new Date().toLocaleTimeString('ko-KR');
+}
+/* 번들에 있는 항목은 즉시(동기) 채우고, 없는 항목만 비동기로 따로 채운다 */
+async function refreshQuotes(){
+  const jobs = [];
+  items.forEach(i=>{
+    const b = fromBundle(i.s,'1일');
+    if(b) quotes[i.s] = quoteFrom(b);
+    else jobs.push(fetchStockLive(i.s,'1일').then(r=>{quotes[i.s]=quoteFrom(r)}).catch(()=>{quotes[i.s]={err:'불러오기 실패'}}));
+  });
+  const fb = fromBundle(FG,'30일');
+  if(fb) fgNow = fb.now;
+  else jobs.push(fetchFGLive('30일').then(r=>{fgNow=r.now}).catch(()=>{
+    const el=document.querySelector('.card[data-key="FG"] .price'); if(el) el.textContent='불러오기 실패'; }));
+  paintAll(); setUpdatedText();
+  if(jobs.length){ await Promise.all(jobs); paintAll(); }
+}
+
+/* ================= 종목 추가/삭제 ================= */
+function removeItem(key){
+  if(custom.some(i=>i.s===key)) custom = custom.filter(i=>i.s!==key); else hidden.add(key);
+  save('custom',custom); save('hidden',[...hidden]);
+  items = buildItems(); syncSelected();
+  renderGrid(); paintAll(); renderChips(); drawSummary();
+}
+async function addItem(){
+  const sym = $('aInput').value.trim().toUpperCase();
+  const msg = $('aMsg');
+  if(!sym){ return; }
+  if(items.some(i=>i.s===sym)){ msg.textContent='이미 추가된 종목이에요.'; return; }
+  msg.textContent='확인 중…';
+  try{
+    const res = await fetchStock(sym,'1일');
+    custom.push({s:sym, n: res.meta?.shortName || sym});
+    hidden.delete(sym); off.delete(sym);
+    quotes[sym] = quoteFrom(res);
+    save('custom',custom); save('hidden',[...hidden]); save('off',[...off]);
+    items = buildItems(); syncSelected();
+    $('aInput').value=''; msg.textContent='';
+    $('addOverlay').classList.remove('show');
+    renderGrid(); paintAll(); renderChips(); drawSummary();
+  }catch(e){ msg.textContent='찾을 수 없거나 조회가 막혔어요. 티커를 확인하고 잠시 후 다시 시도해 주세요.'; }
+}
+
+/* ================= 차트 공통 ================= */
+const minMaxPlugin = {
+  id:'minmax',
+  afterDatasetsDraw(chart,_a,opts){
+    if(!opts?.enabled) return;
+    const ds = chart.data.datasets[0]; if(!ds?.data?.length) return;
+    let mi=0, ma=0;
+    ds.data.forEach((p,i)=>{ if(p.y<ds.data[mi].y) mi=i; if(p.y>ds.data[ma].y) ma=i; });
+    const meta = chart.getDatasetMeta(0), ctx = chart.ctx, area = chart.chartArea;
+    [[ma,'최고','#ef5350',-14],[mi,'최저','#3b82f6',20]].forEach(([i,label,color,dy])=>{
+      const el = meta.data[i]; if(!el) return;
+      const txt = `${label} ${fmt(ds.data[i].y)}`;
+      ctx.save();
+      ctx.fillStyle=color; ctx.beginPath(); ctx.arc(el.x,el.y,5,0,Math.PI*2); ctx.fill();
+      ctx.font='600 12px sans-serif';
+      const w = ctx.measureText(txt).width;
+      let tx = Math.min(Math.max(el.x - w/2, area.left+2), area.right-w-2);
+      ctx.fillStyle='#e8ecf1'; ctx.fillText(txt, tx, el.y+dy);
+      ctx.restore();
+    });
+  }
+};
+Chart.register(minMaxPlugin);
+Chart.defaults.color = '#8b95a5';
+Chart.defaults.borderColor = '#2a313c';
+
+function xFormatter(rangeKey){
+  const intraday = RANGES[rangeKey].intraday;
+  return v=>{
+    const d = new Date(v);
+    if(intraday) return d.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+    if(rangeKey==='5년'||rangeKey==='최대'||rangeKey==='1년') return d.toLocaleDateString('ko-KR',{year:'2-digit',month:'numeric'});
+    return d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+  };
+}
+function fullDate(v,rangeKey){
+  const d = new Date(v);
+  return RANGES[rangeKey].intraday
+    ? d.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})
+    : d.toLocaleDateString('ko-KR',{year:'numeric',month:'numeric',day:'numeric'});
+}
+function makeRangeButtons(container, current, onPick){
+  container.innerHTML='';
+  Object.keys(RANGES).forEach(k=>{
+    const b=document.createElement('button'); b.textContent=k; if(k===current) b.className='on';
+    b.onclick=()=>{ onPick(k); [...container.children].forEach(c=>c.className=c===b?'on':''); };
+    container.appendChild(b);
+  });
+}
+
+/* ================= 상세 팝업 ================= */
+function openModal(key){
+  mKey = key; mRange = '1일';
+  $('mTitle').textContent = nameOf(key);
+  $('mSub').textContent = key===FG ? 'CNN Fear & Greed Index (0~100)' : key;
+  $('chartOverlay').classList.add('show');
+  makeRangeButtons($('mRanges'), mRange, k=>{mRange=k; drawModal();});
+  drawModal();
+}
+async function drawModal(){
+  const msg = $('mMsg');
+  const key = mKey, rk = mRange;
+  const quick = fromBundle(key, rk);
+  if(!quick) msg.textContent='불러오는 중…'; else msg.textContent='';
+  try{
+    const data = quick || await (key===FG ? fetchFG(rk) : fetchStock(key,rk));
+    if(key!==mKey || rk!==mRange) return;
+    msg.textContent='';
+    const pts = data.points;
+    if(mChart) mChart.destroy();
+    const col = colorOf(key);
+    mChart = new Chart($('mChart'),{
+      type:'line',
+      data:{datasets:[{label:nameOf(key), data:pts, borderColor:col, backgroundColor:col+'22', fill:true, borderWidth:2, pointRadius:0, pointHoverRadius:4, tension:.15}]},
+      options:{
+        responsive:true, maintainAspectRatio:false, parsing:false, normalized:true, animation:false,
+        interaction:{mode:'index',intersect:false},
+        layout:{padding:{top:22,bottom:8,left:4,right:14}},
+        scales:{
+          x:{type:'linear', ticks:{maxTicksLimit:6, callback:xFormatter(rk)}, grid:{display:false}},
+          y:{position:'right', ...(key===FG?{min:0,max:100}:{grace:'8%'})}
+        },
+        plugins:{
+          legend:{display:false},
+          minmax:{enabled:true},
+          tooltip:{callbacks:{title:it=>fullDate(it[0].parsed.x,rk), label:c=>fmt(c.parsed.y)}}
+        }
+      }
+    });
+  }catch(e){
+    msg.textContent='이 종목의 차트 데이터를 불러오지 못했어요.';
+  }
+}
+
+/* ================= 요약 차트 ================= */
+function renderChips(){
+  const box = $('chips'); box.innerHTML='';
+  [FG, ...items.map(i=>i.s)].forEach(k=>{
+    const c = document.createElement('div');
+    c.className='chip'+(selected.has(k)?' on':'');
+    c.innerHTML = `<i style="background:${colorOf(k)}"></i>${nameOf(k)}`;
+    c.onclick=()=>{ off.has(k)?off.delete(k):off.add(k); save('off',[...off]); syncSelected(); c.classList.toggle('on'); drawSummary(); };
+    box.appendChild(c);
+  });
+}
+function paintSummary(keys, res, pending){
+  const datasets = [], missing = [];
+  keys.forEach(k=>{
+    if(pending.has(k)) return;
+    const pts = res[k];
+    if(!pts || pts.length<2){ missing.push(nameOf(k)); return; }
+    const col = colorOf(k);
+    if(k===FG){
+      datasets.push({label:nameOf(k)+' (점수)', data:pts, yAxisID:'y1', borderColor:col, borderDash:[6,4], borderWidth:2, pointRadius:0, tension:.15});
+    }else{
+      const b = pts[0].y;
+      datasets.push({label:nameOf(k), data:pts.map(p=>({x:p.x,y:(p.y/b-1)*100})), yAxisID:'y', borderColor:col, borderWidth:2, pointRadius:0, tension:.15});
+    }
+  });
+  $('sumMissing').textContent =
+    (pending.size ? '일부 종목을 불러오는 중… ' : '') +
+    (missing.length ? '이 기간 데이터가 없는 항목: '+missing.join(', ') : '');
+  if(sumChart) sumChart.destroy();
+  const hasFG = datasets.some(d=>d.yAxisID==='y1');
+  sumChart = new Chart($('sumChart'),{
+    type:'line', data:{datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false, parsing:false, normalized:true, animation:false,
+      interaction:{mode:'nearest',axis:'x',intersect:false},
+      scales:{
+        x:{type:'linear', ticks:{maxTicksLimit:7, callback:xFormatter(sumRange)}, grid:{display:false}},
+        y:{position:'left', title:{display:true,text:'등락률 (%)'}, ticks:{callback:v=>v+'%'}},
+        y1:{position:'right', display:hasFG, min:0, max:100, title:{display:true,text:'공포탐욕 점수'}, grid:{drawOnChartArea:false}}
+      },
+      plugins:{
+        legend:{labels:{usePointStyle:true,boxWidth:8}},
+        tooltip:{callbacks:{
+          title:it=>fullDate(it[0].parsed.x,sumRange),
+          label:c=>`${c.dataset.label}: ${c.dataset.yAxisID==='y1'?c.parsed.y.toFixed(0):(c.parsed.y>=0?'+':'')+c.parsed.y.toFixed(2)+'%'}`
+        }}
+      }
+    }
+  });
+}
+let sumToken = 0;
+async function drawSummary(){
+  const token = ++sumToken;
+  const keys = [FG, ...items.map(i=>i.s)].filter(k=>selected.has(k));
+  const res = {}, pending = new Set();
+  keys.forEach(k=>{ const b = fromBundle(k,sumRange); if(b) res[k]=b.points; else pending.add(k); });
+  paintSummary(keys,res,pending);                 // 번들 데이터는 기다리지 않고 바로 그림
+  if(!pending.size) return;
+  await Promise.all([...pending].map(async k=>{   // 임시 추가 종목만 뒤따라 채움
+    try{ res[k] = (await (k===FG ? fetchFGLive(sumRange) : fetchStockLive(k,sumRange))).points; }
+    catch{ res[k] = null; }
+  }));
+  if(token!==sumToken) return;
+  paintSummary(keys,res,new Set());
+}
+
+/* ================= 초기화 ================= */
+async function reloadBundle(){
+  try{
+    const r = await fetch('data/all.json?t='+Date.now());
+    if(r.ok) bundle = await r.json();
+  }catch(e){}
+}
+$('mClose').onclick = ()=>$('chartOverlay').classList.remove('show');
+$('chartOverlay').onclick = e=>{ if(e.target.id==='chartOverlay') $('chartOverlay').classList.remove('show'); };
+$('addBtn').onclick = ()=>{ $('addOverlay').classList.add('show'); $('aMsg').textContent=''; setTimeout(()=>$('aInput').focus(),50); };
+$('aClose').onclick = ()=>$('addOverlay').classList.remove('show');
+$('addOverlay').onclick = e=>{ if(e.target.id==='addOverlay') $('addOverlay').classList.remove('show'); };
+$('aOk').onclick = addItem;
+$('aInput').onkeydown = e=>{ if(e.key==='Enter') addItem(); };
+document.onkeydown = e=>{ if(e.key==='Escape'){ $('chartOverlay').classList.remove('show'); $('addOverlay').classList.remove('show'); } };
+$('refresh').onclick = async ()=>{
+  $('updated').textContent='새로고침 중…'; liveCache.clear();
+  await reloadBundle();
+  refreshQuotes(); drawSummary();
+  if($('chartOverlay').classList.contains('show')) drawModal();
+};
+
+(async function init(){
+  bundle = await window.__bundle;
+  if(bundle?.symbols?.length) base = bundle.symbols;
+  else{
+    try{ const r = await fetch('symbols.json'); if(r.ok){ const j = await r.json(); if(Array.isArray(j)&&j.length) base=j; } }catch(e){}
+  }
+  items = buildItems(); syncSelected();
+  makeRangeButtons($('sumRanges'), sumRange, k=>{sumRange=k; drawSummary();});
+  renderGrid(); renderChips();
+  refreshQuotes(); drawSummary();                 // 접속 시 1회만 (자동 반복 갱신 없음)
+})();
+</script>
+</body>
+</html>
